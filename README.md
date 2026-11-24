@@ -2,6 +2,8 @@
 
 [![smoke](https://github.com/kiddstu/fitness-nudge/actions/workflows/smoke.yml/badge.svg)](https://github.com/kiddstu/fitness-nudge/actions/workflows/smoke.yml)
 
+**[kiddstu.github.io/fitness-nudge](https://kiddstu.github.io/fitness-nudge/)** — hear it before you install it.
+
 A Claude Code plugin that keeps you moving while Claude works.
 
 Every time you hand Claude a task it sets you a small exercise — out loud — and

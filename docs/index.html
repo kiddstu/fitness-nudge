@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fitness-nudge — Claude works, you move</title>
+<meta name="description" content="A Claude Code plugin that sets you a movement break out loud every time Claude goes off to work, and beeps when it needs you back. macOS, Linux, Windows. MIT.">
+<link rel="canonical" href="https://kiddstu.github.io/fitness-nudge/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="fitness-nudge — Claude works, you move">
+<meta property="og:description" content="Every time Claude Code goes off to work it tells you — out loud — to do ten push-ups, then beeps when it needs you back.">
+<meta property="og:image" content="https://kiddstu.github.io/fitness-nudge/media/demo-poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230b0b0c'/><circle cx='16' cy='16' r='4' fill='%23d9a05b'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23d9a05b' stroke-opacity='.45'/><circle cx='16' cy='16' r='14' fill='none' stroke='%23d9a05b' stroke-opacity='.18'/></svg>">
+<script>document.documentElement.classList.remove("no-js")</script>
+<style>
+@font-face{font-family:"JetBrains Mono";src:url("fonts/jetbrains-mono-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("fonts/jetbrains-mono-700.woff2") format("woff2");font-weight:700;font-display:swap}
+
+:root{
+  --ground:#0b0b0c; --ink:#e6e4e1; --dim:#807e7a; --amber:#d9a05b; --green:#86b06b;
+  --rule:rgba(230,228,225,.09); --rule-strong:rgba(230,228,225,.17);
+  --raise:rgba(230,228,225,.028);
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --gut:clamp(20px,4vw,48px); --wide:1120px;
+  --s1:8px; --s2:16px; --s3:24px; --s4:40px; --s5:64px; --s6:96px; --s7:136px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--mono);font-weight:400;
+     font-size:15px;line-height:1.65;overflow-x:hidden;
+     -webkit-font-smoothing:antialiased;font-variant-ligatures:none}
+
+/* browser surfaces, themed rather than left to the UA */
+::selection{background:var(--amber);color:#0b0b0c}
+:focus-visible{outline:2px solid var(--amber);outline-offset:3px;border-radius:1px}
+:root{scrollbar-color:#2a2927 var(--ground);scrollbar-width:thin;caret-color:var(--amber)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:var(--ground)}
+::-webkit-scrollbar-thumb{background:#2a2927;border:3px solid var(--ground);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:#3d3b39}
+a{color:inherit;text-decoration:none}
+.lnk{color:var(--ink);text-decoration:underline;text-decoration-color:var(--dim);
+     text-underline-offset:4px;text-decoration-thickness:1px;transition:text-decoration-color .18s}
+.lnk:hover{text-decoration-color:var(--amber)}
+svg{display:block}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.wrap{width:100%;max-width:var(--wide);margin:0 auto;padding:0 var(--gut)}
+
+/* ─ rail ─────────────────────────────────────────────── */
+.rail{position:fixed;top:0;left:0;right:0;z-index:40;height:64px;
+      background:rgba(11,11,12,.86);backdrop-filter:blur(10px);
+      border-bottom:1px solid var(--rule)}
+.rail .wrap{height:100%;display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
+.brand{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.rail nav{display:flex;gap:var(--s3);font-size:13px;color:var(--dim)}
+.rail nav a{transition:color .18s}
+.rail nav a:hover{color:var(--ink)}
+@media(max-width:720px){.rail nav a:not(.gh){display:none}}
+
+/* ─ the room ─────────────────────────────────────────── */
+.room{min-height:100svh;display:flex;flex-direction:column;padding-top:64px}
+.room .wrap{flex:1;display:flex;flex-direction:column;align-items:center;
+            justify-content:center;text-align:center;padding-top:var(--s2);padding-bottom:var(--s2)}
+h1{font-size:clamp(29px,5.2vw,50px);font-weight:700;line-height:1.16;letter-spacing:-.025em;
+   max-width:30ch}
+h1 em{font-style:normal;color:var(--amber)}
+.lede{margin-top:var(--s2);font-size:15px;color:var(--dim);max-width:56ch;line-height:1.7}
+
+/* the press target — the page's one authored moment */
+.listen{position:relative;width:min(300px,34vh);height:min(300px,34vh);margin-top:var(--s3);
+        display:grid;place-items:center;background:none;border:0;padding:0;
+        cursor:pointer;font-family:inherit;color:inherit;border-radius:50%}
+@media(max-width:560px){.listen{width:min(230px,30vh);height:min(230px,30vh)}}
+.ring{position:absolute;border-radius:50%;border:1px solid var(--amber);
+      transition:opacity .4s ease, transform .4s cubic-bezier(.16,1,.3,1)}
+.r1{width:50%;height:50%;background:var(--amber);border-color:var(--amber);
+    box-shadow:0 16px 42px -18px rgba(0,0,0,.95)}
+.r2{width:72%;height:72%;opacity:.3}
+.r3{width:94%;height:94%;opacity:.12}
+.listen:hover .r1{transform:scale(1.025)}
+.listen:hover .r2{opacity:.48;transform:scale(1.03)}
+.listen:hover .r3{opacity:.24;transform:scale(1.04)}
+.listen .face{position:relative;font-size:13px;font-weight:700;letter-spacing:.16em;
+              text-transform:uppercase;color:var(--ground)}
+/* ripple: the sound leaving the page, once per press */
+.pulse{position:absolute;inset:0;border-radius:50%;border:1px solid var(--amber);
+       opacity:0;pointer-events:none}
+.listen.on .pulse{animation:ripple 1.4s cubic-bezier(.16,1,.3,1) forwards}
+.listen.on .pulse.b{animation-delay:.24s}
+.listen.on .pulse.c{animation-delay:.54s}
+.listen.on .r1{transform:scale(1.07)}
+@keyframes ripple{0%{opacity:.6;transform:scale(.5)}100%{opacity:0;transform:scale(1.5)}}
+
+.hear-state{position:relative;width:100%;max-width:60ch;height:46px;margin-top:var(--s2)}
+.hear-state p{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+              transition:opacity .3s}
+.caption{font-size:12.5px;color:var(--dim);line-height:1.6}
+.said{font-size:clamp(19px,2.6vw,26px);line-height:1.3;font-weight:700;
+      color:var(--amber);letter-spacing:-.01em;opacity:0}
+.hear-state.on .caption{opacity:0}
+.hear-state.on .said{opacity:1}
+
+/* the action */
+.cmd{margin-top:var(--s2);display:flex;align-items:stretch;text-align:left;
+     border:1px solid var(--rule-strong);background:var(--raise);max-width:100%}
+.cmd pre{padding:13px 18px;font:inherit;font-size:14px;line-height:1.85;
+         overflow-x:auto;white-space:pre;scrollbar-width:none}
+.cmd pre::-webkit-scrollbar{display:none}
+.cmd b{color:var(--green);font-weight:400}
+.copy{flex:0 0 auto;display:flex;align-items:center;gap:7px;border:0;
+      border-left:1px solid var(--rule-strong);background:var(--amber);color:#0b0b0c;
+      font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.09em;
+      text-transform:uppercase;padding:0 18px;cursor:pointer;transition:background .18s}
+.copy:hover{background:#e8b473}
+.copy[data-done]{background:var(--green)}
+.copy svg{width:13px;height:13px}
+@media(max-width:620px){
+  /* the command is the action — wrap it rather than scroll it out of sight */
+  .cmd{flex-direction:column}
+  .cmd pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+  .copy{border-left:0;border-top:1px solid var(--rule-strong);padding:11px;justify-content:center}
+  /* two balanced lines beat a lone orphaned word */
+  h1{text-wrap:balance}
+}
+
+/* the fold: the session already running underneath */
+.fold{border-top:1px solid var(--rule);padding:var(--s2) 0 0;overflow:hidden;
+      height:64px;-webkit-mask-image:linear-gradient(#000 40%,transparent);
+      mask-image:linear-gradient(#000 40%,transparent)}
+
+@media(max-height:700px){ .fold{display:none} }
+
+/* ─ sections ─────────────────────────────────────────── */
+section{padding:var(--s7) 0;border-top:1px solid var(--rule)}
+@media(max-width:720px){section{padding:var(--s6) 0}}
+h2{font-size:clamp(23px,3.2vw,32px);font-weight:700;letter-spacing:-.022em;
+   line-height:1.25;max-width:22ch;text-wrap:balance}
+h2 em{font-style:normal;color:var(--amber)}
+.say{margin-top:var(--s2);font-size:15px;color:var(--dim);max-width:65ch;line-height:1.75}
+.say + .say{margin-top:var(--s2)}
+.say.sep{margin-top:var(--s4)}
+.say code,.say b.c{color:var(--ink);font-weight:400}
+.say em{font-style:normal;color:var(--ink)}
+
+/* transcript */
+.term{margin-top:var(--s4);font-size:14px;line-height:2;overflow-x:auto}
+.term .r{display:flex;gap:14px;white-space:nowrap}
+.term .who{flex:0 0 62px;color:var(--dim)}
+.term .you{color:var(--ink)}
+.term .cl{color:var(--green)}
+.term .q{color:var(--amber);font-weight:700}
+.term .meta{color:var(--dim)}
+.term .snd{flex:0 0 auto;width:15px;height:15px;align-self:center;color:var(--amber)}
+
+/* the sound list */
+.sounds{margin-top:var(--s4);border-top:1px solid var(--rule)}
+.snd-row{display:grid;grid-template-columns:52px 1fr auto;gap:var(--s3);align-items:center;
+         border-bottom:1px solid var(--rule);padding:20px 4px;cursor:pointer;
+         transition:background .18s}
+.snd-row:hover{background:var(--raise)}
+.snd-row .btn{width:38px;height:38px;border:1px solid var(--rule-strong);border-radius:50%;
+              display:grid;place-items:center;color:var(--amber);background:none;
+              padding:0;cursor:pointer;transition:border-color .18s,background .18s,color .18s}
+.snd-row:hover .btn{border-color:var(--amber);background:rgba(217,160,91,.1)}
+.snd-row .btn[aria-pressed="true"]{border-color:var(--amber);background:var(--amber);color:#0b0b0c}
+.snd-row .btn svg{width:13px;height:13px}
+.snd-row h3{font-size:16px;font-weight:700;letter-spacing:-.012em}
+.snd-row p{font-size:13.5px;color:var(--dim);margin-top:3px;line-height:1.6}
+.snd-row .ev{font-size:12.5px;color:var(--dim);text-align:right;white-space:nowrap}
+.snd-row .ev b{display:block;color:var(--amber);font-weight:400}
+@media(max-width:620px){
+  .snd-row{grid-template-columns:44px 1fr;gap:var(--s2)}
+  .snd-row .ev{grid-column:2;text-align:left;margin-top:6px}
+}
+
+/* tables */
+.grid{margin-top:var(--s4);width:100%;border-collapse:collapse;font-size:14px}
+.grid th,.grid td{text-align:left;padding:15px 18px 15px 0;border-bottom:1px solid var(--rule);
+                  vertical-align:top;line-height:1.6}
+.grid th{font-weight:400;color:var(--dim);font-size:12px;letter-spacing:.1em;
+         text-transform:uppercase;border-bottom-color:var(--rule-strong);padding-top:0}
+.grid td:first-child{color:var(--amber);white-space:nowrap;padding-right:var(--s4)}
+.grid .ok{color:var(--green)}
+.grid .need{color:var(--ink)}
+@media(max-width:720px){
+  .grid,.grid tbody,.grid tr,.grid td{display:block;width:100%}
+  .grid thead{display:none}
+  .grid tr{border-bottom:1px solid var(--rule);padding:16px 0}
+  .grid td{border:0;padding:2px 0}
+  .grid td:first-child{padding:0 0 6px;font-weight:700}
+  .grid td[data-th]::before{content:attr(data-th);display:block;font-size:11px;
+      letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:8px 0 1px}
+}
+
+/* film */
+.film{margin-top:var(--s4);line-height:0}
+.film video{width:100%;height:auto;display:block}
+
+/* close */
+.close{padding:var(--s7) 0 var(--s6);border-top:1px solid var(--rule);text-align:center}
+.close .wrap{display:flex;flex-direction:column;align-items:center}
+.close .cmd{margin-top:var(--s4)}
+.meta-row{margin-top:var(--s5);display:flex;flex-wrap:wrap;gap:var(--s3);justify-content:center;
+          font-size:13px;color:var(--dim)}
+footer{border-top:1px solid var(--rule);padding:var(--s3) 0;font-size:12.5px;color:var(--dim)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);justify-content:space-between}
+
+@media(max-width:620px){
+  /* the payoff line is ~446px of text in a ~350px column: wrap it, hanging indent */
+  .term{font-size:13px;line-height:1.8;overflow-x:visible}
+  .term .r{white-space:normal;align-items:flex-start}
+  .term .who{flex:0 0 46px}
+  .term .snd{margin-top:6px}
+  /* and the hero still has to land inside one phone viewport */
+  .room .wrap{padding-top:var(--s1);padding-bottom:var(--s1)}
+  .lede{margin-top:var(--s1)}
+  .listen{width:min(205px,27vh);height:min(205px,27vh);margin-top:var(--s2)}
+  .hear-state{height:40px}
+  .fold{height:52px}
+}
+
+.no-js .listen,.no-js .snd-row .btn{opacity:.4;pointer-events:none}
+.no-js .copy{display:none}
+/* with no scripting the quote cannot be revealed by a press, so show it outright —
+   but never at the cost of the caption, which carries the page's only proof claim */
+.no-js .hear-state{height:auto}
+.no-js .hear-state p{position:static;transform:none}
+.no-js .said{opacity:1;margin-top:6px}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+                       transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+
+<svg class="vh" aria-hidden="true"><defs>
+  <g id="i-play"><path d="M3 1.6 11.5 7 3 12.4Z" fill="currentColor"/></g>
+  <g id="i-stop"><rect x="3" y="3" width="8" height="8" fill="currentColor"/></g>
+  <g id="i-copy" fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="4.6" y="4.6" width="8" height="8" rx="1"/><path d="M9.4 1.4H2.4a1 1 0 0 0-1 1v7"/></g>
+  <g id="i-tick" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <path d="M2 7.4 5.4 11 12 3.4"/></g>
+  <g id="i-snd" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="4" cy="7.5" r="1.6" fill="currentColor" stroke="none"/>
+    <path d="M7.6 4.4a4.4 4.4 0 0 1 0 6.2"/><path d="M10.2 2.2a7.8 7.8 0 0 1 0 10.6"/></g>
+</defs></svg>
+
+<header class="rail">
+  <div class="wrap">
+    <a href="#top" class="brand">fitness-nudge</a>
+    <nav>
+      <a href="#session">the session</a>
+      <a href="#hooks">how it works</a>
+      <a href="#platforms">platforms</a>
+      <a href="#tuning">tuning</a>
+      <a class="gh lnk" href="https://github.com/kiddstu/fitness-nudge">github</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ── the room ─────────────────────────────────── -->
+  <div class="room">
+    <div class="wrap">
+      <h1>Claude goes off to work.<br>You do <em>ten push-ups</em>.</h1>
+      <p class="lede">A Claude Code plugin. It sets you the exercise out loud, then
+        beeps when Claude needs you back.</p>
+
+      <button class="listen" id="listen">
+        <span class="pulse"></span><span class="pulse b"></span><span class="pulse c"></span>
+        <span class="ring r3"></span><span class="ring r2"></span><span class="ring r1"></span>
+        <span class="face" id="face">hear it</span>
+      </button>
+
+      <div class="hear-state" id="hearstate">
+        <p class="caption">Sound on. These are the plugin's own audio files, not a re-recording.</p>
+        <p class="said" id="said" aria-hidden="true">“ten push ups”</p>
+      </div>
+      <p class="vh" role="status" id="live"></p>
+
+      <div class="cmd">
+<pre><b>/plugin</b> marketplace add kiddstu/fitness-nudge
+<b>/plugin</b> install fitness-nudge@fitness-nudge</pre>
+        <button class="copy" data-copy="/plugin marketplace add kiddstu/fitness-nudge
+/plugin install fitness-nudge@fitness-nudge">
+          <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-copy"/></svg><span>copy</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="wrap fold" aria-hidden="true">
+      <div class="term">
+        <div class="r"><span class="who">you</span><span class="you">refactor the auth module</span></div>
+        <div class="r"><span class="who"></span><svg class="snd" viewBox="0 0 14 14"><use href="#i-snd"/></svg><span class="q">“ten push ups”</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── the session ──────────────────────────────── -->
+  <section id="session">
+    <div class="wrap">
+      <h2>The dead time while an agent works is the most reliably wasted time in your day.</h2>
+      <p class="say">You hand Claude something that takes four minutes. You read half a page
+        of documentation, check one thing, and come back to a finished diff. This fills
+        that gap, and only that gap.</p>
+
+      <div class="term">
+        <div class="r"><span class="who">you</span><span class="you">refactor the auth module</span></div>
+        <div class="r"><span class="who"></span><svg class="snd" viewBox="0 0 14 14"><use href="#i-snd"/></svg><span class="q">“ten push ups”</span></div>
+        <div class="r"><span class="who cl">claude</span><span class="cl">Ten push-ups — go, I'll keep working.</span></div>
+        <div class="r"><span class="who"></span><span class="meta">…</span></div>
+        <div class="r"><span class="who"></span><svg class="snd" viewBox="0 0 14 14"><use href="#i-snd"/></svg><span class="meta">it needs your input</span></div>
+        <div class="r"><span class="who">you</span><span class="you">yes, use the existing session helper</span></div>
+        <div class="r"><span class="who"></span><span class="meta">no nudge: the 480s cooldown is still running</span></div>
+      </div>
+
+      <p class="say sep">That last line is the whole design.
+        <code>UserPromptSubmit</code> fires on “yes” and “ok” too. Without a floor between
+        nudges you would be doing push-ups to approve a file read.</p>
+    </div>
+  </section>
+
+  <!-- ── the sounds ───────────────────────────────── -->
+  <section id="sounds">
+    <div class="wrap">
+      <h2>Four sounds. That is the <em>entire interface</em>.</h2>
+      <p class="say">There is no window and nothing to look at. Press each one. These are
+        the files the plugin actually plays on macOS.</p>
+
+      <div class="sounds">
+        <div class="snd-row" data-sound="nudge">
+          <button class="btn" type="button" aria-pressed="false" aria-label="Play the spoken nudge, ten push ups">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-play"/></svg>
+          </button>
+          <div><h3>“ten push ups”</h3><p>Spoken, because your eyes are on the agent. A line in the scrollback gets read and ignored.</p></div>
+          <span class="ev">when work starts<b>UserPromptSubmit</b></span>
+        </div>
+        <div class="snd-row" data-sound="ping">
+          <button class="btn" type="button" aria-pressed="false" aria-label="Play the Ping beep">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-play"/></svg>
+          </button>
+          <div><h3>Ping</h3><p>Lands just before the voice, so the sentence never starts in silence you are not listening to.</p></div>
+          <span class="ev">when work starts<b>UserPromptSubmit</b></span>
+        </div>
+        <div class="snd-row" data-sound="glass">
+          <button class="btn" type="button" aria-pressed="false" aria-label="Play the Glass beep">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-play"/></svg>
+          </button>
+          <div><h3>Glass</h3><p>Claude is waiting on you. This is the one you actually come back for.</p></div>
+          <span class="ev">needs your input<b>Notification</b></span>
+        </div>
+        <div class="snd-row" data-sound="tink">
+          <button class="btn" type="button" aria-pressed="false" aria-label="Play the Tink beep">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-play"/></svg>
+          </button>
+          <div><h3>Tink</h3><p>Claude finished and you still owe a set. Gated, because ungated you stop hearing it within a day.</p></div>
+          <span class="ev">work finished<b>Stop</b></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── hooks ────────────────────────────────────── -->
+  <section id="hooks">
+    <div class="wrap">
+      <h2>Not a skill. <em>Three hooks.</em></h2>
+      <p class="say">A skill is instructions to the model, so it depends on the model
+        remembering — and it drifts within a few turns. These are executed by the harness
+        and fire whether the model is paying attention or not.</p>
+      <p class="say">The bundled <code>/fit</code> skill only handles the parts that need
+        judgment: tallies, tuning, picking a gentler list.</p>
+
+      <table class="grid">
+        <thead><tr><th>Event</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>UserPromptSubmit</td><td data-th="What happens">If the cooldown has elapsed, picks an exercise, logs it, speaks it, and tells Claude to announce it.</td></tr>
+          <tr><td>Notification</td><td data-th="What happens">Glass beep. Claude wants your input.</td></tr>
+          <tr><td>Stop</td><td data-th="What happens">Tink beep, <em>only</em> if a nudge is still outstanding.</td></tr>
+        </tbody>
+      </table>
+
+      <p class="say sep">The nudge path always exits 0. Exit code 2
+        on <code>UserPromptSubmit</code> blocks the prompt, so a bug there could stop you
+        talking to Claude at all. Audio is backgrounded too. Hooks are synchronous, and an
+        unbackgrounded <code>say</code> would stall your turn until it finished speaking.</p>
+    </div>
+  </section>
+
+  <!-- ── film ─────────────────────────────────────── -->
+  <section id="film">
+    <div class="wrap">
+      <h2>Twenty-three seconds, with sound.</h2>
+      <p class="say">The same four sounds, in the order you would actually meet them.</p>
+      <div class="film">
+        <video controls preload="none" playsinline poster="media/demo-poster.jpg"
+               width="1920" height="1080">
+          <source src="media/demo.mp4" type="video/mp4">
+          Your browser cannot play this video. It shows a terminal session where the
+          plugin speaks “ten push ups” and beeps when Claude needs input.
+        </video>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── platforms ────────────────────────────────── -->
+  <section id="platforms">
+    <div class="wrap">
+      <h2>macOS, Linux and Windows.</h2>
+      <p class="say">The exercise, the log and Claude's spoken announcement are
+        platform-independent. Only the audio differs.</p>
+
+      <table class="grid">
+        <thead><tr><th>Platform</th><th>Beep</th><th>Spoken exercise</th></tr></thead>
+        <tbody>
+          <tr><td>macOS</td><td data-th="Beep"><span class="ok">afplay</span>, built in</td><td data-th="Spoken exercise"><span class="ok">say</span>, built in</td></tr>
+          <tr><td>Windows</td><td data-th="Beep"><span class="ok">SystemSounds</span>, built in</td><td data-th="Spoken exercise"><span class="ok">System.Speech</span>, built in</td></tr>
+          <tr><td>Linux</td><td data-th="Beep">paplay, canberra-gtk-play or pw-play</td><td data-th="Spoken exercise"><span class="need">espeak-ng</span>, install one</td></tr>
+        </tbody>
+      </table>
+
+      <p class="say sep">Linux is the only platform where voice
+        needs anything installed: <code>sudo apt install espeak-ng</code>. Windows needs
+        <code>bash</code> on PATH, which Git for Windows provides; WSL is detected and routed
+        through PowerShell, since Windows audio is more reliable there than Linux audio.</p>
+      <p class="say">Missing audio is never fatal. With no player and no voice you still get
+        the exercise announced in text, logged and tallied.</p>
+    </div>
+  </section>
+
+  <!-- ── tuning ───────────────────────────────────── -->
+  <section id="tuning">
+    <div class="wrap">
+      <h2>Ask Claude to change it.</h2>
+      <p class="say"><code>/fit report</code> · <code>/fit off</code> ·
+        <code>/fit every 15m</code> · <code>/fit desk only</code> · <code>/fit harder</code>.
+        Or edit the files yourself.</p>
+
+      <table class="grid">
+        <thead><tr><th>Thing</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Exercise list</td><td data-th="Where">~/.claude/fitness/exercises.txt, one per line</td></tr>
+          <tr><td>Your log</td><td data-th="Where">~/.claude/fitness/log.tsv</td></tr>
+          <tr><td>Instant kill switch</td><td data-th="Where">touch ~/.claude/fitness/off</td></tr>
+          <tr><td>Gap between nudges</td><td data-th="Where">CLAUDE_FITNESS_COOLDOWN seconds, default 480</td></tr>
+          <tr><td>Mute the voice, keep beeps</td><td data-th="Where">CLAUDE_FITNESS_VOICE=0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── limits ───────────────────────────────────── -->
+  <section id="limits">
+    <div class="wrap">
+      <h2>What it does not do.</h2>
+      <p class="say">The hooks fire in <em>every</em> project, not just one. To scope them,
+        guard on <code>$CLAUDE_PROJECT_DIR</code> inside the <code>nudge</code> case in
+        <code>scripts/claude-fitness</code>.</p>
+      <p class="say">CI runs every push across macOS, Windows and Ubuntu, and covers all
+        three hook paths, the cooldown, the pending marker, the kill switch and the 7-day
+        report window. It does <em>not</em> cover audible playback: the runners are headless
+        with no audio sink, so what is verified is that the right player and speech engine
+        are detected and invoked, not that a sound came out of a speaker.</p>
+      <p class="say">It does not track you, phone home, or sync anything. The log is a TSV
+        file on your disk.</p>
+    </div>
+  </section>
+
+  <!-- ── close ────────────────────────────────────── -->
+  <div class="close">
+    <div class="wrap">
+      <h2>Two lines, then start a new session.</h2>
+      <div class="cmd">
+<pre><b>/plugin</b> marketplace add kiddstu/fitness-nudge
+<b>/plugin</b> install fitness-nudge@fitness-nudge</pre>
+        <button class="copy" data-copy="/plugin marketplace add kiddstu/fitness-nudge
+/plugin install fitness-nudge@fitness-nudge">
+          <svg viewBox="0 0 14 14" aria-hidden="true"><use href="#i-copy"/></svg><span>copy</span>
+        </button>
+      </div>
+      <div class="meta-row">
+        <a class="lnk" href="https://github.com/kiddstu/fitness-nudge">github.com/kiddstu/fitness-nudge</a>
+        <span>MIT</span>
+        <a class="lnk" href="https://github.com/kiddstu/fitness-nudge/actions/workflows/smoke.yml">CI: macOS · Windows · Ubuntu</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>fitness-nudge, a Claude Code plugin</span>
+    <span>No analytics on this page.</span>
+  </div>
+</footer>
+
+<audio id="a-nudge" src="audio/nudge.mp3" preload="auto"></audio>
+<audio id="a-ping"  src="audio/ping.mp3"  preload="auto"></audio>
+<audio id="a-glass" src="audio/glass.mp3" preload="auto"></audio>
+<audio id="a-tink"  src="audio/tink.mp3"  preload="auto"></audio>
+
+<script>
+(function(){
+  "use strict";
+  var get = function(id){ return document.getElementById(id); };
+
+  /* ── the press target ───────────────────────────── */
+  var listen = get("listen"), face = get("face"),
+      state  = get("hearstate"), live = get("live");
+  var ping = get("a-ping"), nudge = get("a-nudge");
+  var busy = false, settle;
+
+  listen.addEventListener("click", function(){
+    if (busy) return;
+    busy = true;
+    listen.classList.remove("on"); void listen.offsetWidth; listen.classList.add("on");
+    state.classList.add("on");
+    face.textContent = "playing";
+    /* the quote is the text equivalent: announce it, do not read it out pre-emptively */
+    live.textContent = "ten push ups";
+
+    var done = function(){
+      busy = false;
+      face.textContent = "again";
+      listen.classList.remove("on");
+    };
+    /* ping, then the voice 520ms later — the order the plugin plays them in */
+    try {
+      ping.currentTime = 0;
+      var p = ping.play();
+      if (p && p.catch) p.catch(function(){});
+      window.setTimeout(function(){
+        try { nudge.currentTime = 0; nudge.play(); } catch(e){}
+      }, 520);
+      nudge.onended = done;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(function(){ if (busy) done(); }, 2600);
+    } catch(e){ done(); }
+  });
+
+  /* ── the four sounds ────────────────────────────── */
+  var playing = null;
+  var reset = function(ref){
+    ref.btn.setAttribute("aria-pressed", "false");
+    ref.btn.querySelector("use").setAttribute("href", "#i-play");
+  };
+  Array.prototype.forEach.call(document.querySelectorAll(".snd-row"), function(row){
+    var btn = row.querySelector(".btn");
+    var el  = get("a-" + row.getAttribute("data-sound"));
+    if (!btn || !el) return;
+
+    btn.addEventListener("click", function(){
+      if (playing && playing.el !== el) { playing.el.pause(); reset(playing); playing = null; }
+      if (!el.paused) {                       /* pressed again: stop */
+        el.pause(); el.currentTime = 0;
+        reset({ btn: btn }); playing = null;
+        return;
+      }
+      el.currentTime = 0;
+      var pr = el.play();
+      if (pr && pr.catch) pr.catch(function(){});
+      btn.setAttribute("aria-pressed", "true");
+      btn.querySelector("use").setAttribute("href", "#i-stop");
+      playing = { el: el, btn: btn };
+      el.onended = function(){ reset({ btn: btn }); playing = null; };
+    });
+
+    /* clicking anywhere on the row is a mouse convenience; the button is the control */
+    row.addEventListener("click", function(e){
+      if (e.target !== btn && !btn.contains(e.target)) btn.click();
+    });
+  });
+
+  /* ── copy ───────────────────────────────────────── */
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function(btn){
+    var label = btn.querySelector("span"), icon = btn.querySelector("use");
+    var restore = function(){
+      label.textContent = "copy";
+      icon.setAttribute("href", "#i-copy");
+      btn.removeAttribute("data-done");
+    };
+    btn.addEventListener("click", function(){
+      var pre = btn.parentNode.querySelector("pre");
+      var ok = function(){
+        label.textContent = "copied";
+        icon.setAttribute("href", "#i-tick");
+        btn.setAttribute("data-done", "");
+        window.setTimeout(restore, 1900);
+      };
+      /* clipboard refused: select it so the copy is one keystroke, on any platform */
+      var fallback = function(){
+        try {
+          var r = document.createRange(); r.selectNodeContents(pre);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          label.textContent = "selected, copy it";
+        } catch(e){ label.textContent = "select it above"; }
+        window.setTimeout(restore, 3200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(ok, fallback);
+      } else { fallback(); }
+    });
+  });
+})();
+</script>
+</body>
+</html>

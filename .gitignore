@@ -1,1 +1,8 @@
 .DS_Store
+
+# video build (hyperframes) — the mp4 ships in docs/, the project does not
+node_modules/
+brag-output/
+
+# design tooling scratch: surface briefs, decision sketches, review captures
+.impeccable/
