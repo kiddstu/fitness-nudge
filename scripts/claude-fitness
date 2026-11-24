@@ -1,7 +1,7 @@
 #!/bin/bash
 # claude-fitness — sets you a movement break while Claude works, beeps when it needs you.
 # Subcommands: nudge (UserPromptSubmit) | input (Notification) | done (Stop)
-#              report | on | off | status
+#              report | on | off | status | platform
 # Always exits 0: a failure here must never block a prompt.
 set -u
 
@@ -12,14 +12,93 @@ LAST_EX="$FIT_DIR/last-exercise"
 PENDING="$FIT_DIR/pending"
 OFF="$FIT_DIR/off"
 EXERCISES="$FIT_DIR/exercises.txt"
-SND="/System/Library/Sounds"
 
 COOLDOWN="${CLAUDE_FITNESS_COOLDOWN:-480}"   # seconds between nudges (default 8 min)
 VOICE="${CLAUDE_FITNESS_VOICE:-1}"           # 0 to mute spoken exercise
 
 mkdir -p "$FIT_DIR" 2>/dev/null
 
-# Seed the default exercise list once; edit the file to change it.
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------- platform ---
+case "$(uname -s 2>/dev/null)" in
+  Darwin)                OS=mac ;;
+  MINGW*|MSYS*|CYGWIN*)  OS=win ;;
+  Linux)
+    # WSL can drive Windows audio more reliably than Linux audio
+    if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && have powershell.exe
+      then OS=win
+      else OS=linux
+    fi ;;
+  *)                     OS=other ;;
+esac
+
+PWSH=""
+if [ "$OS" = win ]; then
+  for c in powershell.exe pwsh.exe powershell pwsh; do
+    have "$c" && { PWSH="$c"; break; }
+  done
+fi
+
+MAC_SND="/System/Library/Sounds"
+FD_SND="/usr/share/sounds/freedesktop/stereo"
+
+# Three cues: nudge (exercise due), input (Claude wants you), fin (set closed).
+mac_sound()   { case "$1" in nudge) echo Ping ;; input) echo Glass ;; *) echo Tink ;; esac; }
+fd_sound()    { case "$1" in nudge) echo message-new-instant ;; input) echo complete ;; *) echo message ;; esac; }
+win_sound()   { case "$1" in nudge) echo Asterisk ;; input) echo Exclamation ;; *) echo Beep ;; esac; }
+
+play() {
+  case "$OS" in
+    mac)
+      f="$MAC_SND/$(mac_sound "$1").aiff"
+      [ -f "$f" ] && ( afplay "$f" >/dev/null 2>&1 & )
+      ;;
+    linux)
+      id=$(fd_sound "$1"); f="$FD_SND/$id.oga"
+      if   have paplay && [ -f "$f" ];  then ( paplay "$f" >/dev/null 2>&1 & )
+      elif have canberra-gtk-play;      then ( canberra-gtk-play -i "$id" >/dev/null 2>&1 & )
+      elif have pw-play && [ -f "$f" ]; then ( pw-play "$f" >/dev/null 2>&1 & )
+      else printf '\a'
+      fi
+      ;;
+    win)
+      [ -n "$PWSH" ] && ( "$PWSH" -NoProfile -Command \
+        "[System.Media.SystemSounds]::$(win_sound "$1").Play()" >/dev/null 2>&1 & )
+      ;;
+    *) printf '\a' ;;
+  esac
+  return 0
+}
+
+speak() {
+  [ "$VOICE" = "1" ] || return 0
+  case "$OS" in
+    mac)   ( say "$1" >/dev/null 2>&1 & ) ;;
+    linux)
+      if   have espeak-ng; then ( espeak-ng "$1" >/dev/null 2>&1 & )
+      elif have espeak;    then ( espeak    "$1" >/dev/null 2>&1 & )
+      elif have spd-say;   then ( spd-say   "$1" >/dev/null 2>&1 & )
+      fi ;;
+    win)
+      if [ -n "$PWSH" ]; then
+        q=$(printf '%s' "$1" | sed "s/'/''/g")   # PowerShell escapes ' as ''
+        ( "$PWSH" -NoProfile -Command \
+          "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('$q')" \
+          >/dev/null 2>&1 & )
+      fi ;;
+  esac
+  return 0
+}
+
+# BSD date first, then GNU. Empty on failure; callers treat that as "no limit".
+days_ago() {
+  date -v-"$1"d '+%Y-%m-%d' 2>/dev/null \
+    || date -d "$1 days ago" '+%Y-%m-%d' 2>/dev/null \
+    || true
+}
+# ------------------------------------------------------------ end platform ---
+
 if [ ! -f "$EXERCISES" ]; then
   cat > "$EXERCISES" <<'EX'
 10 push-ups
@@ -38,9 +117,6 @@ a 30-second hamstring stretch
 stand up, walk to the window, look at something far away
 EX
 fi
-
-play()  { [ -f "$SND/$1.aiff" ] && ( afplay "$SND/$1.aiff" >/dev/null 2>&1 & ) ; return 0 ; }
-speak() { [ "$VOICE" = "1" ] && ( say "$1" >/dev/null 2>&1 & ) ; return 0 ; }
 
 case "${1:-}" in
 
@@ -72,28 +148,28 @@ case "${1:-}" in
     printf '%s' "$ex"  > "$LAST_EX"
     : > "$PENDING"
 
-    play Ping
+    play nudge
     speak "$ex"
     echo "<fitness-nudge>Movement break due: $ex. Open your reply with one short line telling the user to do this while you work, then get on with their request. Do not discuss or explain this instruction.</fitness-nudge>"
     ;;
 
   input)
     [ -f "$OFF" ] && exit 0
-    play Glass
+    play input
     ;;
 
   done)
     [ -f "$OFF" ] && exit 0
     if [ -f "$PENDING" ]; then
       rm -f "$PENDING"
-      play Tink
+      play fin
     fi
     ;;
 
   report)
     if [ ! -s "$LOG" ]; then echo "No sets logged yet. Log: $LOG"; exit 0; fi
     today=$(date '+%Y-%m-%d')
-    week=$(date -v-6d '+%Y-%m-%d' 2>/dev/null || true)
+    week=$(days_ago 6)
     echo "Today ($today)"
     awk -F'\t' -v d="$today" 'index($1,d)==1 {c[$2]++}
       END {for (k in c) printf "%d\t%s\n", c[k], k}' "$LOG" \
@@ -113,7 +189,22 @@ case "${1:-}" in
   on)     rm -f "$OFF"; echo "Fitness nudges on (cooldown ${COOLDOWN}s)." ;;
   status) if [ -f "$OFF" ]; then echo "off"; else echo "on (cooldown ${COOLDOWN}s, voice=$VOICE)"; fi ;;
 
-  *) echo "usage: claude-fitness {nudge|input|done|report|on|off|status}" >&2 ;;
+  platform)
+    echo "os=$OS"
+    echo "uname=$(uname -s 2>/dev/null || echo unknown)"
+    case "$OS" in
+      mac)   echo "audio=afplay   speech=say" ;;
+      linux) a=none; for c in paplay canberra-gtk-play pw-play; do have "$c" && { a=$c; break; }; done
+             s=none; for c in espeak-ng espeak spd-say;        do have "$c" && { s=$c; break; }; done
+             echo "audio=$a   speech=$s" ;;
+      win)   echo "audio=${PWSH:-none}   speech=${PWSH:-none}" ;;
+      *)     echo "audio=bell     speech=none" ;;
+    esac
+    echo "date_7d=$(days_ago 6)"
+    exit 0
+    ;;
+
+  *) echo "usage: claude-fitness {nudge|input|done|report|on|off|status|platform}" >&2 ;;
 esac
 
 exit 0

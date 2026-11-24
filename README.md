@@ -1,5 +1,7 @@
 # fitness-nudge
 
+[![smoke](https://github.com/kiddstu/fitness-nudge/actions/workflows/smoke.yml/badge.svg)](https://github.com/kiddstu/fitness-nudge/actions/workflows/smoke.yml)
+
 A Claude Code plugin that keeps you moving while Claude works.
 
 Every time you hand Claude a task it sets you a small exercise — out loud — and
@@ -21,7 +23,35 @@ claude:  Ten push-ups — go, I'll keep working.
 /plugin install fitness-nudge@fitness-nudge
 ```
 
-Then start a new session. macOS only — it uses `say` and `afplay`.
+Then start a new session.
+
+## Platforms
+
+Works on macOS, Linux and Windows. The exercise, the log and Claude's spoken
+announcement are platform-independent; only the audio differs.
+
+| | Beep | Spoken exercise |
+|---|---|---|
+| **macOS** | `afplay` — built in | `say` — built in |
+| **Windows** | PowerShell `SystemSounds` — built in | `System.Speech` — built in |
+| **Linux** | `paplay`, `canberra-gtk-play` or `pw-play` | `espeak-ng`, `espeak` or `spd-say` — **install one** |
+
+Linux is the only platform where voice needs anything installed:
+
+```bash
+sudo apt install espeak-ng
+```
+
+Windows needs `bash` on PATH for the hook to run at all, which Git for Windows
+provides. WSL is detected and routed through PowerShell, since Windows audio is
+more reliable there than Linux audio.
+
+Missing audio is never fatal — with no player and no voice you still get the
+exercise announced in text, logged and tallied. Check what was detected with:
+
+```bash
+bash scripts/claude-fitness platform
+```
 
 ## How it works
 
@@ -69,6 +99,13 @@ Set env vars in the `env` block of `~/.claude/settings.json`.
 
 The hooks fire in every project, not just one. To scope them, guard on
 `$CLAUDE_PROJECT_DIR` inside the `nudge` case in `scripts/claude-fitness`.
+
+## Tests
+
+`.github/workflows/smoke.yml` runs on every push across macOS, Windows and
+Linux: all three hook paths, the cooldown, the kill switch, the 7-day report
+window (which catches BSD vs GNU `date` differences), and that an unknown
+subcommand still exits 0.
 
 ## License
 

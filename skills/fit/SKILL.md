@@ -64,5 +64,9 @@ naturally when spoken aloud by `say`: "10 push-ups", not "Pushups x10". Keep
 - Keep hooks fast and all audio backgrounded (`( ... & )`). Hooks are
   synchronous; an unbackgrounded `say` stalls the turn until it stops talking.
 - `shuf` is not on macOS. The script uses a `$RANDOM` index instead.
+- Audio differs per platform. If the user reports no sound, run
+  `bash scripts/claude-fitness platform` — it prints the detected OS, which
+  player and which speech engine were found. On Linux, voice needs
+  `espeak-ng` installed; missing audio is never fatal.
 - Hooks here fire in every project. To scope them, guard on
   `$CLAUDE_PROJECT_DIR` inside the `nudge` case.

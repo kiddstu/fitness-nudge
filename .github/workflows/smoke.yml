@@ -1,0 +1,94 @@
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect platform
+        shell: bash
+        run: bash scripts/claude-fitness platform
+
+      - name: Hook paths
+        shell: bash
+        run: |
+          set -eu
+          S=scripts/claude-fitness
+          export CLAUDE_FITNESS_DIR="$RUNNER_TEMP/fit"
+          export CLAUDE_FITNESS_VOICE=0
+          fail() { echo "FAIL: $1"; exit 1; }
+
+          # platform must resolve, and the 7-day date must compute on this OS
+          bash "$S" platform | grep -qE '^os=(mac|linux|win)$' || fail "platform not detected"
+          bash "$S" platform | grep -qE '^date_7d=[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
+            || fail "days_ago produced no date (neither BSD nor GNU date worked)"
+
+          # cold nudge announces, logs, exits 0
+          out=$(bash "$S" nudge) || fail "nudge exited non-zero"
+          echo "$out" | grep -q '<fitness-nudge>' || fail "nudge emitted no marker"
+          [ -s "$CLAUDE_FITNESS_DIR/log.tsv" ] || fail "nudge did not log"
+
+          # cooldown suppresses the next one
+          [ -z "$(bash "$S" nudge)" ] || fail "cooldown did not suppress"
+
+          # notification + stop
+          bash "$S" input || fail "input exited non-zero"
+          [ -f "$CLAUDE_FITNESS_DIR/pending" ] || fail "pending marker missing"
+          bash "$S" done  || fail "done exited non-zero"
+          [ ! -f "$CLAUDE_FITNESS_DIR/pending" ] || fail "done did not clear pending"
+          bash "$S" done  || fail "done on empty pending exited non-zero"
+
+          # speech path must not crash when actually enabled
+          CLAUDE_FITNESS_VOICE=1 CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge >/dev/null \
+            || fail "nudge with voice enabled exited non-zero"
+
+          # kill switch
+          bash "$S" off >/dev/null
+          [ -z "$(CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge)" ] || fail "off did not suppress"
+          bash "$S" on >/dev/null
+
+          # a bad subcommand must still exit 0 — exit 2 would block the user's prompt
+          bash "$S" definitely-not-a-subcommand 2>/dev/null || fail "bad subcommand exited non-zero"
+
+          echo "all hook paths OK"
+
+      - name: Report windowing
+        shell: bash
+        run: |
+          set -eu
+          S=scripts/claude-fitness
+          export CLAUDE_FITNESS_DIR="$RUNNER_TEMP/report"
+          mkdir -p "$CLAUDE_FITNESS_DIR"
+          recent=$(bash "$S" platform | sed -n 's/^date_7d=//p')
+          old=1999-01-02
+          printf '%s 09:00:00\t20 squats\n%s 09:00:00\t10 push-ups\n' "$recent" "$old" \
+            > "$CLAUDE_FITNESS_DIR/log.tsv"
+          out=$(bash "$S" report); echo "$out"
+          echo "$out" | grep -q "$recent" || { echo "FAIL: in-window day missing"; exit 1; }
+          if echo "$out" | sed -n '/Last 7 days/,/^$/p' | grep -q "$old"; then
+            echo "FAIL: out-of-window day leaked into the 7-day section"; exit 1
+          fi
+          echo "report windowing OK"
+
+      - name: Manifests
+        shell: bash
+        run: |
+          set -eu
+          jq -e . .claude-plugin/plugin.json      > /dev/null
+          jq -e . .claude-plugin/marketplace.json > /dev/null
+          jq -e . hooks/hooks.json                > /dev/null
+          [ "$(jq -r '.hooks | keys | length' hooks/hooks.json)" = 3 ] \
+            || { echo "FAIL: expected 3 hook events"; exit 1; }
+          echo "manifests OK"
