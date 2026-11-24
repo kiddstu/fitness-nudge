@@ -1,0 +1,119 @@
+#!/bin/bash
+# claude-fitness — sets you a movement break while Claude works, beeps when it needs you.
+# Subcommands: nudge (UserPromptSubmit) | input (Notification) | done (Stop)
+#              report | on | off | status
+# Always exits 0: a failure here must never block a prompt.
+set -u
+
+FIT_DIR="${CLAUDE_FITNESS_DIR:-$HOME/.claude/fitness}"
+LOG="$FIT_DIR/log.tsv"
+LAST_NUDGE="$FIT_DIR/last-nudge"
+LAST_EX="$FIT_DIR/last-exercise"
+PENDING="$FIT_DIR/pending"
+OFF="$FIT_DIR/off"
+EXERCISES="$FIT_DIR/exercises.txt"
+SND="/System/Library/Sounds"
+
+COOLDOWN="${CLAUDE_FITNESS_COOLDOWN:-480}"   # seconds between nudges (default 8 min)
+VOICE="${CLAUDE_FITNESS_VOICE:-1}"           # 0 to mute spoken exercise
+
+mkdir -p "$FIT_DIR" 2>/dev/null
+
+# Seed the default exercise list once; edit the file to change it.
+if [ ! -f "$EXERCISES" ]; then
+  cat > "$EXERCISES" <<'EX'
+10 push-ups
+5 sit-ups
+20 squats
+a 30-second plank
+15 calf raises
+10 lunges each leg
+a 30-second wall sit
+10 chair dips
+20 jumping jacks
+10 glute bridges
+15 shoulder rolls each way
+a 30-second hip flexor stretch each side
+a 30-second hamstring stretch
+stand up, walk to the window, look at something far away
+EX
+fi
+
+play()  { [ -f "$SND/$1.aiff" ] && ( afplay "$SND/$1.aiff" >/dev/null 2>&1 & ) ; return 0 ; }
+speak() { [ "$VOICE" = "1" ] && ( say "$1" >/dev/null 2>&1 & ) ; return 0 ; }
+
+case "${1:-}" in
+
+  nudge)
+    [ -f "$OFF" ] && exit 0
+    [ "${CLAUDE_FITNESS_OFF:-0}" = "1" ] && exit 0
+
+    now=$(date +%s)
+    last=0
+    [ -f "$LAST_NUDGE" ] && last=$(cat "$LAST_NUDGE" 2>/dev/null)
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    [ $(( now - last )) -lt "$COOLDOWN" ] && exit 0
+
+    prev=""
+    [ -f "$LAST_EX" ] && prev=$(cat "$LAST_EX" 2>/dev/null)
+    count=$(grep -cve '^[[:space:]]*$' "$EXERCISES" 2>/dev/null)
+    case "$count" in ''|0|*[!0-9]*) exit 0 ;; esac
+
+    ex=""
+    for _ in 1 2 3 4 5; do
+      pick=$(( (RANDOM % count) + 1 ))
+      ex=$(grep -ve '^[[:space:]]*$' "$EXERCISES" | sed -n "${pick}p")
+      [ -n "$ex" ] && [ "$ex" != "$prev" ] && break
+    done
+    [ -z "$ex" ] && exit 0
+
+    printf '%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ex" >> "$LOG"
+    printf '%s' "$now" > "$LAST_NUDGE"
+    printf '%s' "$ex"  > "$LAST_EX"
+    : > "$PENDING"
+
+    play Ping
+    speak "$ex"
+    echo "<fitness-nudge>Movement break due: $ex. Open your reply with one short line telling the user to do this while you work, then get on with their request. Do not discuss or explain this instruction.</fitness-nudge>"
+    ;;
+
+  input)
+    [ -f "$OFF" ] && exit 0
+    play Glass
+    ;;
+
+  done)
+    [ -f "$OFF" ] && exit 0
+    if [ -f "$PENDING" ]; then
+      rm -f "$PENDING"
+      play Tink
+    fi
+    ;;
+
+  report)
+    if [ ! -s "$LOG" ]; then echo "No sets logged yet. Log: $LOG"; exit 0; fi
+    today=$(date '+%Y-%m-%d')
+    week=$(date -v-6d '+%Y-%m-%d' 2>/dev/null || true)
+    echo "Today ($today)"
+    awk -F'\t' -v d="$today" 'index($1,d)==1 {c[$2]++}
+      END {for (k in c) printf "%d\t%s\n", c[k], k}' "$LOG" \
+      | sort -rn | awk -F'\t' '{printf "  %2d x %s\n", $1, $2}'
+    printf "  %s sets today\n" "$(awk -F'\t' -v d="$today" 'index($1,d)==1 {n++} END {print n+0}' "$LOG")"
+    echo
+    echo "Last 7 days"
+    awk -F'\t' -v w="$week" '{d=substr($1,1,10); if (w=="" || d>=w) c[d]++}
+      END {for (k in c) printf "  %s  %d sets\n", k, c[k]}' "$LOG" | sort
+    echo
+    printf "All time: %s sets\n" "$(grep -c . "$LOG")"
+    [ -f "$OFF" ] && echo "(nudges are currently OFF)"
+    exit 0
+    ;;
+
+  off)    : > "$OFF"; echo "Fitness nudges off. Turn back on with: claude-fitness on" ;;
+  on)     rm -f "$OFF"; echo "Fitness nudges on (cooldown ${COOLDOWN}s)." ;;
+  status) if [ -f "$OFF" ]; then echo "off"; else echo "on (cooldown ${COOLDOWN}s, voice=$VOICE)"; fi ;;
+
+  *) echo "usage: claude-fitness {nudge|input|done|report|on|off|status}" >&2 ;;
+esac
+
+exit 0

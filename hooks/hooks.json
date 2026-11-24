@@ -1,0 +1,41 @@
+{
+  "description": "Fitness nudge — movement break on prompt submit, beep when Claude needs input, beep when a set closes.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-fitness\" nudge",
+            "timeout": 5,
+            "statusMessage": "Setting your movement break"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-fitness\" input",
+            "timeout": 5,
+            "statusMessage": "Nudging you back"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-fitness\" done",
+            "timeout": 5,
+            "statusMessage": "Closing your set"
+          }
+        ]
+      }
+    ]
+  }
+}

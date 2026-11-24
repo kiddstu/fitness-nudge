@@ -1,0 +1,14 @@
+{
+  "name": "fitness-nudge",
+  "description": "Stay fit while Claude works. A movement break when it starts, a beep when it needs you.",
+  "owner": {
+    "name": "kidd"
+  },
+  "plugins": [
+    {
+      "name": "fitness-nudge",
+      "source": "./",
+      "description": "Sets you a movement break every time Claude goes off to work, and beeps when it needs you back."
+    }
+  ]
+}
