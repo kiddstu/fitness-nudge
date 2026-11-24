@@ -102,10 +102,21 @@ The hooks fire in every project, not just one. To scope them, guard on
 
 ## Tests
 
-`.github/workflows/smoke.yml` runs on every push across macOS, Windows and
-Linux: all three hook paths, the cooldown, the kill switch, the 7-day report
-window (which catches BSD vs GNU `date` differences), and that an unknown
-subcommand still exits 0.
+`.github/workflows/smoke.yml` runs on every push across `macos-latest`,
+`windows-latest` and `ubuntu-latest`.
+
+**Covered:** all three hook paths exit 0; the nudge announces, logs and
+respects the cooldown; the `pending` marker is set and cleared; the kill switch
+suppresses; the 7-day report window is correct, which catches BSD vs GNU `date`
+differences; an unknown subcommand still exits 0, since exit 2 on
+`UserPromptSubmit` would block the user's prompt. On Linux, `paplay`,
+`espeak-ng` and the freedesktop sound assets are installed and asserted
+present, and `espeak-ng` is made to synthesize a real `.wav`.
+
+**Not covered:** audible playback. CI runners are headless and have no audio
+sink on any of the three platforms, so what is verified is that the right
+player and speech engine are detected and invoked — not that a sound came out
+of a speaker.
 
 ## License
 

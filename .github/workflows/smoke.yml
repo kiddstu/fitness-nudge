@@ -17,9 +17,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Without these the Linux runner detects audio=none, so CI would only ever
+      # exercise the fallback path and never the real one.
+      - name: Install Linux audio tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng pulseaudio-utils sound-theme-freedesktop
+
       - name: Detect platform
         shell: bash
         run: bash scripts/claude-fitness platform
+
+      # Assert the real branch is taken, not the bell fallback. A headless runner
+      # has no sink, so audible playback is not verifiable on any platform here —
+      # what we verify is that the player, the sound asset and the speech engine
+      # are present and that the engine can actually synthesize.
+      - name: Linux audio is genuinely wired
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -eu
+          fail() { echo "FAIL: $1"; exit 1; }
+          plat=$(bash scripts/claude-fitness platform)
+          echo "$plat"
+          grep -q 'audio=paplay'      <<<"$plat" || fail "paplay not detected"
+          grep -q 'speech=espeak-ng'  <<<"$plat" || fail "espeak-ng not detected"
+          [ -f /usr/share/sounds/freedesktop/stereo/message-new-instant.oga ] \
+            || fail "freedesktop sound asset missing, so the paplay branch is dead"
+          espeak-ng -w "$RUNNER_TEMP/tts.wav" "ten push ups"
+          [ -s "$RUNNER_TEMP/tts.wav" ] || fail "espeak-ng produced no audio"
+          echo "linux audio wired: paplay + espeak-ng + freedesktop sounds"
 
       - name: Hook paths
         shell: bash
