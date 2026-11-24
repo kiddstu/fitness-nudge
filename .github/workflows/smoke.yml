@@ -31,13 +31,14 @@ jobs:
           fail() { echo "FAIL: $1"; exit 1; }
 
           # platform must resolve, and the 7-day date must compute on this OS
-          bash "$S" platform | grep -qE '^os=(mac|linux|win)$' || fail "platform not detected"
-          bash "$S" platform | grep -qE '^date_7d=[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
+          plat=$(bash "$S" platform)
+          grep -qE '^os=(mac|linux|win)$' <<<"$plat" || fail "platform not detected: $plat"
+          grep -qE '^date_7d=[0-9]{4}-[0-9]{2}-[0-9]{2}$' <<<"$plat" \
             || fail "days_ago produced no date (neither BSD nor GNU date worked)"
 
           # cold nudge announces, logs, exits 0
           out=$(bash "$S" nudge) || fail "nudge exited non-zero"
-          echo "$out" | grep -q '<fitness-nudge>' || fail "nudge emitted no marker"
+          grep -q '<fitness-nudge>' <<<"$out" || fail "nudge emitted no marker"
           [ -s "$CLAUDE_FITNESS_DIR/log.tsv" ] || fail "nudge did not log"
 
           # cooldown suppresses the next one
@@ -76,8 +77,9 @@ jobs:
           printf '%s 09:00:00\t20 squats\n%s 09:00:00\t10 push-ups\n' "$recent" "$old" \
             > "$CLAUDE_FITNESS_DIR/log.tsv"
           out=$(bash "$S" report); echo "$out"
-          echo "$out" | grep -q "$recent" || { echo "FAIL: in-window day missing"; exit 1; }
-          if echo "$out" | sed -n '/Last 7 days/,/^$/p' | grep -q "$old"; then
+          grep -q "$recent" <<<"$out" || { echo "FAIL: in-window day missing"; exit 1; }
+          window=$(sed -n '/Last 7 days/,/^$/p' <<<"$out")
+          if grep -q "$old" <<<"$window"; then
             echo "FAIL: out-of-window day leaked into the 7-day section"; exit 1
           fi
           echo "report windowing OK"
