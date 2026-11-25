@@ -437,7 +437,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);justify-content
   <section id="tuning">
     <div class="wrap">
       <h2>Ask Claude to change it.</h2>
-      <p class="say"><code>/fit report</code> · <code>/fit off</code> ·
+      <p class="say"><code>/fit report</code> · <code>/fit did</code> · <code>/fit off</code> ·
         <code>/fit every 15m</code> · <code>/fit desk only</code> · <code>/fit harder</code>.
         Or edit the files yourself.</p>
 
@@ -449,6 +449,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);justify-content
           <tr><td>Instant kill switch</td><td data-th="Where">touch ~/.claude/fitness/off</td></tr>
           <tr><td>Gap between nudges</td><td data-th="Where">CLAUDE_FITNESS_COOLDOWN seconds, default 480</td></tr>
           <tr><td>Mute the voice, keep beeps</td><td data-th="Where">CLAUDE_FITNESS_VOICE=0</td></tr>
+          <tr><td>Stop tracking what you did</td><td data-th="Where">CLAUDE_FITNESS_CONFIRM=0</td></tr>
         </tbody>
       </table>
     </div>
@@ -462,10 +463,11 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);justify-content
         guard on <code>$CLAUDE_PROJECT_DIR</code> inside the <code>nudge</code> case in
         <code>scripts/claude-fitness</code>.</p>
       <p class="say">CI runs every push across macOS, Windows and Ubuntu, and covers all
-        three hook paths, the cooldown, the pending marker, the kill switch and the 7-day
-        report window. It does <em>not</em> cover audible playback: the runners are headless
-        with no audio sink, so what is verified is that the right player and speech engine
-        are detected and invoked, not that a sound came out of a speaker.</p>
+        three hook paths, the cooldown, the pending marker, the kill switch, the 7-day
+        report window and the set-confirmation log. It does <em>not</em> cover audible
+        playback: the runners are headless with no audio sink, so what is verified is that
+        the right player and speech engine are detected and invoked, not that a sound came
+        out of a speaker.</p>
       <p class="say">It does not track you, phone home, or sync anything. The log is a TSV
         file on your disk.</p>
     </div>

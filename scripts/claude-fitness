@@ -1,7 +1,7 @@
 #!/bin/bash
 # claude-fitness — sets you a movement break while Claude works, beeps when it needs you.
 # Subcommands: nudge (UserPromptSubmit) | input (Notification) | done (Stop)
-#              report | on | off | status | platform
+#              did | skip | report | on | off | status | platform
 # Always exits 0: a failure here must never block a prompt.
 set -u
 
@@ -10,11 +10,13 @@ LOG="$FIT_DIR/log.tsv"
 LAST_NUDGE="$FIT_DIR/last-nudge"
 LAST_EX="$FIT_DIR/last-exercise"
 PENDING="$FIT_DIR/pending"
+OUTSTANDING="$FIT_DIR/outstanding"   # a set that was issued and not yet answered
 OFF="$FIT_DIR/off"
 EXERCISES="$FIT_DIR/exercises.txt"
 
 COOLDOWN="${CLAUDE_FITNESS_COOLDOWN:-480}"   # seconds between nudges (default 8 min)
 VOICE="${CLAUDE_FITNESS_VOICE:-1}"           # 0 to mute spoken exercise
+CONFIRM="${CLAUDE_FITNESS_CONFIRM:-1}"       # 0 to stop asking whether a set was done
 
 mkdir -p "$FIT_DIR" 2>/dev/null
 
@@ -128,7 +130,18 @@ case "${1:-}" in
     last=0
     [ -f "$LAST_NUDGE" ] && last=$(cat "$LAST_NUDGE" 2>/dev/null)
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    [ $(( now - last )) -lt "$COOLDOWN" ] && exit 0
+    age=$(( now - last ))
+    if [ "$age" -lt "$COOLDOWN" ]; then
+      # No new exercise is due. If the last one was never answered, mention it to
+      # Claude so a passing "did them" gets logged. Never prompt for it: a question
+      # on every turn is the un-gated beep all over again. The 60s floor keeps it
+      # from nagging in the same breath as the announcement.
+      if [ "$CONFIRM" = "1" ] && [ -f "$OUTSTANDING" ] && [ "$age" -ge 60 ]; then
+        oex=$(cut -f2 "$OUTSTANDING" 2>/dev/null)
+        [ -n "$oex" ] && echo "<fitness-nudge>Open set: $oex, set $(( age / 60 )) minutes ago. If the user mentions doing it, run: claude-fitness did. If they say they skipped it: claude-fitness skip. Otherwise say nothing about it and do not ask.</fitness-nudge>"
+      fi
+      exit 0
+    fi
 
     prev=""
     [ -f "$LAST_EX" ] && prev=$(cat "$LAST_EX" 2>/dev/null)
@@ -143,7 +156,8 @@ case "${1:-}" in
     done
     [ -z "$ex" ] && exit 0
 
-    printf '%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ex" >> "$LOG"
+    printf '%s\t%s\tset\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ex" "$now" >> "$LOG"
+    printf '%s\t%s\n' "$now" "$ex" > "$OUTSTANDING"
     printf '%s' "$now" > "$LAST_NUDGE"
     printf '%s' "$ex"  > "$LAST_EX"
     : > "$PENDING"
@@ -166,21 +180,64 @@ case "${1:-}" in
     fi
     ;;
 
+  # What the user actually did. Deliberately not gated on $OFF: turning nudges
+  # off should not stop you closing a set you were already given.
+  did|skip)
+    if [ ! -f "$OUTSTANDING" ]; then echo "No open set to log."; exit 0; fi
+    oid=$(cut -f1 "$OUTSTANDING" 2>/dev/null)
+    oex=$(cut -f2 "$OUTSTANDING" 2>/dev/null)
+    rm -f "$OUTSTANDING"
+    if [ -z "$oex" ]; then echo "No open set to log."; exit 0; fi
+    case "$oid" in ''|*[!0-9]*) oid=0 ;; esac
+    printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$oex" "$1" "$oid" >> "$LOG"
+    case "$1" in
+      did)  echo "Logged: $oex." ;;
+      skip) echo "Skipped: $oex." ;;
+    esac
+    ;;
+
   report)
     if [ ! -s "$LOG" ]; then echo "No sets logged yet. Log: $LOG"; exit 0; fi
     today=$(date '+%Y-%m-%d')
     week=$(days_ago 6)
+    # A row is either a legacy 2-column assignment or
+    # timestamp<TAB>exercise<TAB>set|did|skip<TAB>id. A row with no explicit
+    # status is an assignment nobody ever answered for, so it counts as nudged
+    # and not as done. Never conflate the two: the count of exercises you were
+    # told to do is not the count of exercises you did.
     echo "Today ($today)"
-    awk -F'\t' -v d="$today" 'index($1,d)==1 {c[$2]++}
-      END {for (k in c) printf "%d\t%s\n", c[k], k}' "$LOG" \
-      | sort -rn | awk -F'\t' '{printf "  %2d x %s\n", $1, $2}'
-    printf "  %s sets today\n" "$(awk -F'\t' -v d="$today" 'index($1,d)==1 {n++} END {print n+0}' "$LOG")"
+    awk -F'\t' -v d="$today" '
+      index($1,d)!=1     {next}
+      NF<=2 || $3=="set" {s[$2]++; next}
+      $3=="did"          {k[$2]++}
+      END {for (e in s) printf "%d\t%d\t%s\n", s[e], k[e]+0, e}
+    ' "$LOG" | sort -rn | awk -F'\t' '
+      $2>0 {printf "  %2d x %s  (%d done)\n", $1, $3, $2; next}
+           {printf "  %2d x %s\n", $1, $3}'
+    awk -F'\t' -v d="$today" '
+      index($1,d)!=1     {next}
+      NF<=2 || $3=="set" {n++; next}
+      $3=="did"          {c++; next}
+      $3=="skip"         {k++}
+      END {printf "  %d nudged, %d confirmed", n+0, c+0
+           if (k+0) printf ", %d skipped", k
+           printf "\n"}
+    ' "$LOG"
     echo
     echo "Last 7 days"
-    awk -F'\t' -v w="$week" '{d=substr($1,1,10); if (w=="" || d>=w) c[d]++}
-      END {for (k in c) printf "  %s  %d sets\n", k, c[k]}' "$LOG" | sort
+    awk -F'\t' -v w="$week" '
+      {d=substr($1,1,10); if (w!="" && d<w) next; seen[d]=1}
+      NF<=2 || $3=="set" {n[d]++; next}
+      $3=="did"          {c[d]++}
+      END {for (d in seen) printf "  %s  %2d nudged  %2d confirmed\n", d, n[d]+0, c[d]+0}
+    ' "$LOG" | sort
     echo
-    printf "All time: %s sets\n" "$(grep -c . "$LOG")"
+    awk -F'\t' '
+      NF<=2 || $3=="set" {n++; next}
+      $3=="did"          {c++}
+      END {printf "All time: %d nudged, %d confirmed\n", n+0, c+0}
+    ' "$LOG"
+    [ -f "$OUTSTANDING" ] && printf "Open right now: %s\n" "$(cut -f2 "$OUTSTANDING" 2>/dev/null)"
     [ -f "$OFF" ] && echo "(nudges are currently OFF)"
     exit 0
     ;;
@@ -204,7 +261,7 @@ case "${1:-}" in
     exit 0
     ;;
 
-  *) echo "usage: claude-fitness {nudge|input|done|report|on|off|status|platform}" >&2 ;;
+  *) echo "usage: claude-fitness {nudge|input|done|did|skip|report|on|off|status|platform}" >&2 ;;
 esac
 
 exit 0

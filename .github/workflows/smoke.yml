@@ -93,6 +93,64 @@ jobs:
 
           echo "all hook paths OK"
 
+      - name: Confirmation tracking
+        shell: bash
+        run: |
+          set -eu
+          S=scripts/claude-fitness
+          export CLAUDE_FITNESS_DIR="$RUNNER_TEMP/confirm"
+          export CLAUDE_FITNESS_VOICE=0
+          L="$CLAUDE_FITNESS_DIR/log.tsv"
+          O="$CLAUDE_FITNESS_DIR/outstanding"
+          fail() { echo "FAIL: $1"; exit 1; }
+
+          # a nudge records an assignment, not an achievement, and opens a set
+          bash "$S" nudge >/dev/null || fail "nudge exited non-zero"
+          [ "$(awk -F'\t' 'NR==1{print $3}' "$L")" = set ] || fail "row not marked as an assignment"
+          id=$(awk -F'\t' 'NR==1{print $4}' "$L")
+          [ -n "$id" ] || fail "assignment carries no id to pair against"
+          [ -f "$O" ] || fail "set was not opened"
+
+          # a set issued seconds ago is not pestered about
+          [ -z "$(bash "$S" nudge)" ] || fail "reminded within 60s of setting it"
+
+          # an aged, unanswered set is surfaced so a passing "did them" can land
+          printf '%s' "$(( $(date +%s) - 120 ))" > "$CLAUDE_FITNESS_DIR/last-nudge"
+          grep -q 'Open set:' <<<"$(bash "$S" nudge)" || fail "open set never surfaced"
+
+          # ...unless the user turned tracking off
+          [ -z "$(CLAUDE_FITNESS_CONFIRM=0 bash "$S" nudge)" ] || fail "CONFIRM=0 still surfaced it"
+
+          # confirming appends a row paired to its assignment and closes the set
+          bash "$S" did >/dev/null || fail "did exited non-zero"
+          [ ! -f "$O" ] || fail "did left the set open"
+          [ "$(awk -F'\t' 'END{print $3}' "$L")" = did ] || fail "no did row appended"
+          [ "$(awk -F'\t' 'END{print $4}' "$L")" = "$id" ] || fail "did row not paired to its assignment"
+
+          # nothing open: safe, and must never invent a set that was not issued
+          before=$(wc -l < "$L" | tr -d ' ')
+          bash "$S" did  || fail "did on no open set exited non-zero"
+          bash "$S" skip || fail "skip on no open set exited non-zero"
+          [ "$(wc -l < "$L" | tr -d ' ')" = "$before" ] || fail "logged a set that was never issued"
+
+          # a skip is recorded, and distinctly from a did
+          CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge >/dev/null
+          bash "$S" skip >/dev/null
+          [ "$(awk -F'\t' 'END{print $3}' "$L")" = skip ] || fail "skip not recorded"
+
+          # the Stop hook means Claude finished, NOT that the user did the exercise
+          CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge >/dev/null
+          bash "$S" done >/dev/null
+          [ -f "$O" ] || fail "Stop hook closed a set the user never answered for"
+
+          # the report keeps the two numbers apart and claims no rate it cannot know
+          out=$(bash "$S" report); echo "$out"
+          grep -qE 'All time: [0-9]+ nudged, 1 confirmed' <<<"$out" \
+            || fail "report did not separate nudged from confirmed"
+          ! grep -q '%' <<<"$out" || fail "report invented a completion percentage"
+
+          echo "confirmation tracking OK"
+
       - name: Report windowing
         shell: bash
         run: |
@@ -110,6 +168,10 @@ jobs:
           if grep -q "$old" <<<"$window"; then
             echo "FAIL: out-of-window day leaked into the 7-day section"; exit 1
           fi
+          # 2-column rows predate the status column: they must count as nudged
+          # and must never silently promote themselves to confirmed
+          grep -q 'All time: 2 nudged, 0 confirmed' <<<"$out" \
+            || { echo "FAIL: legacy rows miscounted"; exit 1; }
           echo "report windowing OK"
 
       - name: Manifests

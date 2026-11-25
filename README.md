@@ -16,6 +16,8 @@ you:     "refactor the auth module"
 claude:  Ten push-ups — go, I'll keep working.
          ...
          🔔  (it needs your input)
+you:     "did them. what did you find?"
+         ✓ logged
 ```
 
 ## Install
@@ -61,17 +63,49 @@ Three hooks, no magic:
 
 | Event | What happens |
 |---|---|
-| `UserPromptSubmit` | If the cooldown has elapsed, picks an exercise, logs it, speaks it, and tells Claude to announce it |
+| `UserPromptSubmit` | If the cooldown has elapsed, picks an exercise, logs it, speaks it, and tells Claude to announce it. In between, it names any set you haven't answered for |
 | `Notification` | Glass beep — Claude wants your input |
 | `Stop` | Tink beep, *only* if a nudge is still outstanding |
 
 The `Stop` beep is gated deliberately. Without that gate you get beeped after
 every trivial exchange and stop hearing it within a day.
 
+## What actually gets logged
+
+Two different things, never conflated:
+
+```
+2026-11-25 16:40:23	20 jumping jacks	set	1764088823
+2026-11-25 16:44:02	20 jumping jacks	did	1764088823
+```
+
+A `set` row is what you were told to do. A `did` row is what you did. Plenty of
+tooling counts the first and prints it as the second.
+
+You close a set by saying so — "did those", "skipped that one" — inside whatever
+you were already typing. While a set is open the hook mentions it to Claude,
+which runs `claude-fitness did` or `claude-fitness skip` on your behalf. It
+never asks you, and it never logs a set you didn't claim. `/fit did` works too
+if you'd rather be explicit.
+
+Rows are append-only and paired by id, never rewritten, because the hooks fire
+in every project at once and two sessions editing one file would corrupt it.
+Logs from before this existed read as unconfirmed rather than breaking.
+
+`/fit report` prints nudged and confirmed as separate numbers:
+
+```
+All time: 59 nudged, 1 confirmed
+```
+
+There is deliberately no completion percentage. A set you did and never
+mentioned looks identical to one you skipped, so the denominator would be
+fiction.
+
 ## Tuning
 
-Ask Claude: `/fit report`, `/fit off`, `/fit every 15m`, `/fit desk only`,
-`/fit harder`. Or do it yourself:
+Ask Claude: `/fit report`, `/fit did`, `/fit off`, `/fit every 15m`,
+`/fit desk only`, `/fit harder`. Or do it yourself:
 
 | Thing | Where |
 |---|---|
@@ -80,6 +114,7 @@ Ask Claude: `/fit report`, `/fit off`, `/fit every 15m`, `/fit desk only`,
 | Instant kill switch | `touch ~/.claude/fitness/off` |
 | Gap between nudges | `CLAUDE_FITNESS_COOLDOWN` seconds, default 480 |
 | Mute the voice, keep beeps | `CLAUDE_FITNESS_VOICE=0` |
+| Stop tracking what you did | `CLAUDE_FITNESS_CONFIRM=0` |
 
 Set env vars in the `env` block of `~/.claude/settings.json`.
 
@@ -96,6 +131,10 @@ Set env vars in the `env` block of `~/.claude/settings.json`.
   stalls your turn until it finishes speaking.
 - **A cooldown is essential.** `UserPromptSubmit` fires on "yes" and "ok" too.
   Without a floor between nudges you'd be doing push-ups to approve a file read.
+- **The log counts what you did, not what you were told.** Counting assignments
+  and labelling them sets inflates the only number the tool shows you, and a
+  number you quietly know is inflated gets ignored just as completely as an
+  un-gated beep. Confirmation is never solicited, for the same reason.
 
 ## Caveat
 
