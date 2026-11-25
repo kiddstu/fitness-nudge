@@ -2,7 +2,9 @@
   "name": "fitness-nudge",
   "description": "Stay fit while Claude works. A movement break when it starts, a beep when it needs you.",
   "owner": {
-    "name": "kidd"
+    "name": "Stuart Kidd",
+    "email": "26446189+kiddstu@users.noreply.github.com",
+    "url": "https://github.com/kiddstu"
   },
   "plugins": [
     {

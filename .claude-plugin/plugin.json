@@ -3,7 +3,9 @@
   "description": "Sets you a movement break every time Claude goes off to work, and beeps when it needs you back.",
   "version": "0.1.0",
   "author": {
-    "name": "kidd"
+    "name": "Stuart Kidd",
+    "email": "26446189+kiddstu@users.noreply.github.com",
+    "url": "https://github.com/kiddstu"
   },
   "license": "MIT",
   "keywords": ["fitness", "health", "hooks", "ergonomics", "pomodoro"]
