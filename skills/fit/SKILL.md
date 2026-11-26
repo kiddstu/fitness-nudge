@@ -95,7 +95,10 @@ Two rules here matter more than anything else in this skill:
   reason the column is worth having is that the number can be trusted.
 - **Never ask.** Don't open a turn with "did you do your squats?". Either they
   mention it or they don't. A question on every turn gets tuned out within a
-  day, for exactly the reason the `Stop` beep is gated.
+  day, for exactly the reason the `Stop` beep is gated. Telling is not asking:
+  the hook adds "and that they can just say when it is done" to the first few
+  announcements so the user learns it exists, and drops it after three. If that
+  clause is not in the instruction you were given, don't add it yourself.
 
 ## Gotchas worth preserving
 

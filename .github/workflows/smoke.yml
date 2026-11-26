@@ -149,6 +149,17 @@ jobs:
             || fail "report did not separate nudged from confirmed"
           ! grep -q '%' <<<"$out" || fail "report invented a completion percentage"
 
+          # the affordance is taught on the first few sets, then gets out of the way
+          export CLAUDE_FITNESS_DIR="$RUNNER_TEMP/teach"
+          grep -q 'say when it is done' <<<"$(CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge)" \
+            || fail "never told the user they could confirm"
+          for _ in 1 2 3; do
+            bash "$S" did >/dev/null
+            CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge >/dev/null
+          done
+          ! grep -q 'say when it is done' <<<"$(CLAUDE_FITNESS_COOLDOWN=0 bash "$S" nudge)" \
+            || fail "still teaching it after the user clearly knows"
+
           echo "confirmation tracking OK"
 
       - name: Report windowing

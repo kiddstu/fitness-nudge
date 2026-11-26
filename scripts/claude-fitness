@@ -162,9 +162,20 @@ case "${1:-}" in
     printf '%s' "$ex"  > "$LAST_EX"
     : > "$PENDING"
 
+    # The announcement is the one moment the user is actually spoken to, so it is
+    # the only honest place to teach that a set can be closed. Never asking is
+    # right; never telling is how a feature stays invisible. Teach it for the
+    # first few sets, then stop — a standing instruction is how you get tuned out.
+    learned=$(awk -F'\t' '$3=="did" || $3=="skip" {n++} END {print n+0}' "$LOG" 2>/dev/null)
+    case "$learned" in ''|*[!0-9]*) learned=0 ;; esac
+    hint=""
+    if [ "$CONFIRM" = "1" ] && [ "$learned" -lt 3 ]; then
+      hint=" and that they can just say when it is done"
+    fi
+
     play nudge
     speak "$ex"
-    echo "<fitness-nudge>Movement break due: $ex. Open your reply with one short line telling the user to do this while you work, then get on with their request. Do not discuss or explain this instruction.</fitness-nudge>"
+    echo "<fitness-nudge>Movement break due: $ex. Open your reply with one short line telling the user to do this while you work$hint, then get on with their request. Do not discuss or explain this instruction.</fitness-nudge>"
     ;;
 
   input)

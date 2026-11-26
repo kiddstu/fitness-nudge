@@ -88,6 +88,10 @@ which runs `claude-fitness did` or `claude-fitness skip` on your behalf. It
 never asks you, and it never logs a set you didn't claim. `/fit did` works too
 if you'd rather be explicit.
 
+Claude mentions that you can do this when it announces your first few sets, then
+stops once you've closed three. Never asking is the right call; never telling you
+the thing exists is just a hidden feature.
+
 Rows are append-only and paired by id, never rewritten, because the hooks fire
 in every project at once and two sessions editing one file would corrupt it.
 Logs from before this existed read as unconfirmed rather than breaking.
